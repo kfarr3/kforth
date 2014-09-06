@@ -1,0 +1,241 @@
+Welcome to kforth.  The original intention of this project stemmed from a desire to have an
+interactive, interpreted environment to put on embedded systems for monitoring and control
+applications.  I get tired of the compile, program, boot process that some architectures
+have and wanted a quicker way to develop simple applications.
+
+I started looking at existing languages and implementations that were portable and small enough.
+I looked at many implementations of Forth, Lua and Python, all of which were too large for my
+needs.  I also became frustrated with how non-portable or non-embedded the portable and embedded
+implementations of these languages were.  As an embedded developer I expect a Hardware Abstraction
+Layer or a platform layer to remove all external dependencies.
+
+So, I decided to write my own implementation of Forth, having experience with it and knowing
+how simple of a language it was, figured it would be the easiest way to my goal.  As I started
+implementing the language to meet the specifications I noticed that there were quite a few
+things about Forth that I didn't like.  I didn't like how loops, conditionals or variables were
+used.  I also really didn't like how loops and conditionals had to be compiled into words before
+they could be used.  I originally implemented a majority of the language to the Forth specification
+but there were too many "cases" to handle and I wanted the majority of the language to be what I
+call "Forth Like".  Where there are very few special cases and most every word executes the same.
+I then started rewriting it again and here we are.
+
+Things and Whatnots:
+* kforth is stack based post-fix.
+* kforth allows conditionals and loops at the interactive prompt
+* kforth can export saved words to a text file
+* kforth can import saved words from a text file
+* kforth can be easily extended by adding new primitive words using C
+* kforth can be easily ported to any 32-bit platform (or platform where void* and int are the same size)
+* kforth has weak support for variables as of yet -- Still looking into a better way
+
+
+******  Building  ******
+kforth comes with a Unix implementation that should compile and run on any *nix or even Cygwin.
+I have only ever tried to compile it on Linux so far (I'm still aways from releasing).  There's
+a makefile that mostly works.
+
+	Files:
+		* config.h 			- 	place to put compile time config options, the platform config option 
+								is the only one at the moment
+		* dictionary_1.c/h 	- 	Where all of the primitive words are defined.
+		* kforth.c/h		- 	The kforth parser, executer, compiler, etc
+		* lib.f				-	kforth library file that can be imported
+		* main.c			-	Platform dependent main file that 'RUNS' kforth
+		* platform.h		-	Generic platform file that includes the platform specific include file
+		* platform_unix.c/h	-	Unix specific platform functions, mostly stdio stuff that's been abstracted
+		* words.h			-	Place to define word structures and things
+
+Just run gcc on the .c files and output a kforth executable.  'make unix' should do the trick on system with
+make and gcc.  The makefile needs some improvements to be more portable, but it isn't the focus now.
+
+
+******  Porting  ******
+To port kforth to a new platform, you need to make your own platform_x.c/h files and implement those functions
+that are defined in platform_unix.c/h.  Then follow the pattern in platform.h for your platform to be included
+in the makefile.  Or, alternatively, just make sure those functions are found when the system compiles.  I know
+that some IDEs have their own way.  For example, in CodeComposer I make a directory called 'kforth' and put all
+of the required files in there, I have a platform_stellaris.c/h for my hardware and setup platform.h to include
+platform_stellaris.h and viola, all seems happy.
+
+Kforth doesn't do anything without the main application telling it to.  In main.c you will see a basic terminal
+application that accepts statements form the user and executes them by calling kforth_execute_statement.  Use
+whatever input mechanism you need for your platform.
+
+NOTE: memory and alloc'ing.  
+kforth needs to malloc memory (platform_malloc()) whenever a word will be stored in the dictionary.  This is the only
+time kforth allocs and currently it doesn't free.  Normally a word is added to the dictionary and never removed,
+only recently did the reload function get added but all of that alloc'ed memory is currently lost.  It's on the TODO.
+
+
+
+******  Using kforth  ******
+Lets assume that you built it for unix and that you can run it by typing `./kforth`.  You should get something along
+the lines of:
+
+kforth v0.3
+type 'bye' to exit
+
+Congratulations, you can now use kforth!
+
+
+kforth is interactive, you type a statement at the command line and it gets executed.  All statements are ended with a 
+carriage return and/or line feed and all words within the statement are separated by a space.
+
+kforth is a stack based language, it uses a stack for lots of things.  Lets look at the stack, type `.s` to see
+the stack.
+
+.s<cr>
+
+ok
+
+Nothing's on the stack, lets put a 42 on the stack, type: 42<cr>
+
+42<cr>
+ok
+
+Now lets see what's on the stack again with the .s.
+
+.s<cr>
+42
+ok
+
+You can pop the top item off the stack and print it to the screen with the '.' character.  Enter '.' then cr.
+
+.<cr>
+42 ok
+.s
+
+ok
+
+
+There, wasn't that fun?  Lets try some simple math.
+
+100 200 + .
+300 ok
+
+kforth sees the following `100 200 + .` and tokenizes on the space so it gets 4 words, "100", "200", "+" and "." it then
+executes each word, since "100" isn't in the dictionary of known words and it is an integer it gets pushed on the stack,
+same goes for 200.  However, since "+" is a known word the C function call defined in dictionary_1.c gets called (fn_plus()).
+The "+" function will pop two items off the stack, add them together and put the result on the stack.  The final word is the "."
+which as we know will pop the top item off the stack and print it to the screen.
+
+All of kforth operates very much like this so get used to it.  It's simple for computers to operate in a post-fix environment.
+
+Lets do some looping.  If you're familiar with the C for loop:
+
+for(i=a; i<b; i+=c) { <statement> } think of it in this way
+for(a; a<b; a+=c){ <statement> }
+
+and convert it to kforth and do this
+
+a b c for <statement> loop
+
+
+The library lib.f has two forth for loops, 'count' and 'rect'
+
+Load the library (make sure it's in the same directory) with 'load lib.f' if all goes well you should be able to type
+
+10 count
+0 1 2 3 4 5 6 7 8 9 ok
+
+Now lets try nested for loops.
+
+rect
+*****
+*****
+*****
+*****
+*****
+*****
+*****
+*****
+*****
+*****
+ok
+
+Want to 'see' what the words are after they're compiled into the dictionary?  Type:
+see count
+0 swap 1 for A . loop
+ok
+see rect
+0 10 1 for 0 5 1 for ." *" loop cr loop
+
+Loads of fun!
+
+What about conditionals?  Look at the word is0 (which was loaded from lib.f)
+see is0
+0 = if ." Yep, it's 0" cr elif ." Nope, not 0" cr endif ." Done" cr
+0 is0
+Yep, it's 0
+Done
+1 is0
+Nope, not 0
+Done
+
+The equality will pop two items off the stack, compare them and put FORTH_TRUE or FORTH_FALSE
+back on the stack, if will then see if the top of stack is FORTH_TRUE, if so, it executes the
+code between if and elif, otherwise it branches and executes the code between elif and endif.
+It always executes code after the endif.
+
+Note, elif is not required but endif is.  Also note, that the last statements after endif are
+not required, the word may end there.
+
+Also, you can execute the '?' word to get a print out of what words are available.
+
+
+That's about it for this quick and dirty tutorial.  Remember that kforth does VERY LITTLE
+syntax checking, it assumes a responsible programmer.  It's a goal of mine to make a compile
+time options to enable/disable strict stack checking.  In the meantime, if it crashes you 
+probably broke the stack.
+
+
+
+******  Extending kforth  ******
+Adding your own C functions and primitive words to forth is EASY!  That was a major goal of this
+language.  The quick and dirty way is to open up dictionary_1.c and navigate to the bottom where
+you will see a big statically defined linked list.  Mimic the structure there, ensuring that
+you add your item INTO the linked list, fixing the NEXT pointer.  You'll notice that the last
+item is entry_bye, which is also the FIRST item in the linked list and the pointer dictionary_1
+is pointing to it, dictionary_1 will always point to the first item in the list.  You should also
+note that the very last item, entry_for has a NULL pointer for the NEXT entry, this is because
+it's the LAST item.  Add your item wherever, just make sure that it follows the linked list
+pattern.
+
+You'll also need to define your C function, they are all prefixed with a fn_* and take a _kforth_context
+pointer which will get you to the stack data.  Most of the primitive functions here will directly
+access the stack and only update the stack pointer once if required.  For a reference
+
+context->stack_ptr[-1] = Top of stack
+context->stack_ptr[-2] = Next on stack
+context->stack_ptr[0] = Not on the stack, make sure to do a context->stack_ptr++ to increment the stack
+pointer if you're adding something.
+
+lets look at fn_plus, since it's simple enough.  If you recall, the "+" word will pop 2 items off the stack, 
+add them together and put the result back on the stack.  We don't want to have to increment the stack pointer
+3 times to do this, so we do the following.
+
+context->stack_ptr[-2]=context->stack_ptr[-2]+context->stack_ptr[-1];
+context->stack_ptr--;
+
+That puts into the Next on stack (-2) the sum of -1 and -2 and then decrements the stack pointer by 1.
+
+Also, note that MOST functions return a 0, the return value of a word function indicates how many words to
+jump.  This is used for branching words like loop, while, if and elif where we need to jump some words.
+
+I've started to define some macros like STACK_PUSH and STACK_POP but not all the code has been refactored yet.
+Take a look at fn_time to see that it will PUSH onto the stack the return value of platform_time, which is defined
+in platform_unix.h as time from time.h.
+
+After adding your word, recompile and run kforth again, you should see your word listed in '?' and you can call it.
+
+
+That's it for the moment.  Have problems or improvement requests?  ken.farr.0@gmail.com
+
+Remember, this is a PRE_RELEASE!!
+
+
+
+
+
+
+
